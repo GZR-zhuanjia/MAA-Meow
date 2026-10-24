@@ -140,6 +140,7 @@ object SettingSearchIndex {
         SettingSearchEntry(R.string.settings_oper_box_yituliu_title, thirdParty, R.string.settings_oper_box_yituliu_desc),
         SettingSearchEntry(R.string.panel_autobattle_operbox_assist, thirdParty, R.string.settings_oper_box_assist_desc),
 
+        SettingSearchEntry(R.string.settings_eye_protection_warning_title, task, R.string.settings_eye_protection_warning_desc),
         SettingSearchEntry(R.string.settings_deploy_with_pause, task, R.string.settings_deploy_with_pause_desc),
         SettingSearchEntry(R.string.settings_tasks_override_title, task, R.string.settings_tasks_override_desc),
         SettingSearchEntry(R.string.settings_game_package_title, task),

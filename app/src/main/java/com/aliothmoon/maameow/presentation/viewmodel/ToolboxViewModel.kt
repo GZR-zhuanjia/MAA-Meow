@@ -306,13 +306,21 @@ class ToolboxViewModel(
         _gachaTip.value = uiTextOf(R.string.gacha_init_tip)
     }
 
-    fun onDialogConfirm() {
-        when (_dialog.value?.confirmAction) {
+    fun onDialogConfirm(dontRemindAgain: Boolean = false) {
+        val dialog = _dialog.value
+        when (dialog?.confirmAction) {
             PanelDialogConfirmAction.CONFIRM_PENDING_START -> {
                 val pending = pendingStartContext
                 _dialog.value = null
                 pendingStartContext = null
-                if (pending != null) onStart(pending)
+                if (pending != null) {
+                    viewModelScope.launch {
+                        if (dontRemindAgain && dialog.showDontRemindAgain) {
+                            appSettingsManager.setEyeProtectionWarningEnabled(false)
+                        }
+                        onStart(pending)
+                    }
+                }
             }
 
             else -> _dialog.value = null

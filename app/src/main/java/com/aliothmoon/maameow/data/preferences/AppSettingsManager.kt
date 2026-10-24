@@ -323,6 +323,15 @@ class AppSettingsManager internal constructor(
         }
     }
 
+    val eyeProtectionWarningEnabled: StateFlow<Boolean> =
+        setting { it.eyeProtectionWarningEnabled.toBooleanStrictOrNull() ?: true }
+
+    suspend fun setEyeProtectionWarningEnabled(enabled: Boolean) {
+        with(AppSettingsSchema) {
+            context.dataStore.edit { it[eyeProtectionWarningEnabled] = enabled.toString() }
+        }
+    }
+
     // 任务结束时关闭应用
     val closeAppOnTaskEnd: StateFlow<Boolean> = setting { it.closeAppOnTaskEnd.toBooleanStrictOrNull() ?: false }
 

@@ -1,6 +1,7 @@
 package com.aliothmoon.maameow.koin
 
 import com.aliothmoon.maameow.data.config.MaaPathConfig
+import com.aliothmoon.maameow.data.preferences.AppSettingsManager
 import com.aliothmoon.maameow.data.resource.HotUpdateSync
 import com.aliothmoon.maameow.domain.usecase.AnalyzeTaskChainUseCase
 import com.aliothmoon.maameow.domain.usecase.CheckGameReadinessUseCase
@@ -36,9 +37,10 @@ val useCaseModule = module {
         )
     }
     factory {
+        val appSettings = get<AppSettingsManager>()
         CheckGameReadinessUseCase(
             appAliveChecker = get(),
-            appSettings = get(),
+            appSettings = appSettings,
             achievementReporter = get(),
             isPackageInstalled = { packageName ->
                 withContext(Dispatchers.IO) {
@@ -63,6 +65,10 @@ val useCaseModule = module {
                 }
             },
             isAdbInputRestricted = XiaomiAdbInput::isRestricted,
+            isEyeProtectionWarningEnabled = {
+                appSettings.awaitLoaded()
+                appSettings.eyeProtectionWarningEnabled.value
+            },
         )
     }
     factory {

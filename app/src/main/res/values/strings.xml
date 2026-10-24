@@ -392,6 +392,8 @@
     <string name="settings_shizuku_launch_app_loading">正在加载应用列表…</string>
     <string name="settings_shizuku_launch_app_search_hint">搜索应用名或包名</string>
     <string name="settings_shizuku_launch_app_empty">未找到匹配应用</string>
+    <string name="settings_eye_protection_warning_title">护眼模式启动提醒</string>
+    <string name="settings_eye_protection_warning_desc">检测到护眼或夜光模式开启时，启动任务前提醒</string>
     <string name="settings_deploy_with_pause">划火柴模式</string>
     <string name="settings_deploy_with_pause_desc">自动战斗相关，不稳定，暂不推荐开启</string>
     <string name="settings_force_fullscreen_on_virtual_display">后台模式强制全屏模式</string>
@@ -1926,6 +1928,7 @@ MAA 不会因为取消勾选此选项而提前在局内结束探索</string>
     <string name="task_start_warning_wake_up_skipped">检测到游戏未运行，且本次从中途开始、跳过了「开始唤醒」任务，继续执行可能直接失败。是否仍然启动？</string>
     <string name="task_start_warning_game_not_installed">未检测到当前客户端类型对应的游戏安装包，请检查「开始唤醒」中的客户端类型设置是否正确。是否仍要启动？</string>
     <string name="task_start_warning_eye_protection_enabled">检测到设备已开启护眼/夜光模式，可能会影响图像色彩识别准确度。是否仍然启动？</string>
+    <string name="task_start_warning_dont_remind_again">不再提醒</string>
     <string name="task_start_warning_adb_input_restricted">检测到未开启「USB 调试（安全设置）」，系统会拦截 MaaMeow 的触控输入。请在开发者选项中开启（未生效可重启手机）。是否仍然启动？</string>
     <string name="task_start_enable_adb_input_with_root">用 Root 开启</string>
     <string name="task_start_fix_open_developer_settings">打开开发者选项</string>

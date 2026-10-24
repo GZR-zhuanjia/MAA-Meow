@@ -12,6 +12,7 @@ import com.aliothmoon.maameow.data.model.CopilotConfig
 import com.aliothmoon.maameow.data.model.copilot.CopilotListItem
 import com.aliothmoon.maameow.data.model.copilot.CopilotTaskData
 import com.aliothmoon.maameow.data.model.copilot.DifficultyFlags
+import com.aliothmoon.maameow.data.preferences.AppSettingsManager
 import com.aliothmoon.maameow.data.preferences.TaskChainState
 import com.aliothmoon.maameow.data.repository.CopilotRepository
 import com.aliothmoon.maameow.data.resource.CopilotResourceProvider
@@ -139,6 +140,7 @@ class CopilotViewModel(
     private val operBoxAssist: CopilotOperBoxAssist,
     private val operBoxYituliuSync: OperBoxYituliuSync,
     private val metadataGate: GameMetadataGate,
+    private val appSettingsManager: AppSettingsManager,
 ) : ViewModel() {
 
     companion object {
@@ -1141,13 +1143,21 @@ class CopilotViewModel(
         persistConfig()
     }
 
-    fun onDialogConfirm() {
-        when (_dialog.value?.confirmAction) {
+    fun onDialogConfirm(dontRemindAgain: Boolean = false) {
+        val dialog = _dialog.value
+        when (dialog?.confirmAction) {
             PanelDialogConfirmAction.CONFIRM_PENDING_START -> {
                 val pending = pendingStartContext
                 _dialog.value = null
                 pendingStartContext = null
-                if (pending != null) onStart(pending)
+                if (pending != null) {
+                    viewModelScope.launch {
+                        if (dontRemindAgain && dialog.showDontRemindAgain) {
+                            appSettingsManager.setEyeProtectionWarningEnabled(false)
+                        }
+                        onStart(pending)
+                    }
+                }
             }
 
             else -> {

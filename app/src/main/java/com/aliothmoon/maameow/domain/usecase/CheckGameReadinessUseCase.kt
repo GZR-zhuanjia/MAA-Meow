@@ -22,6 +22,7 @@ class CheckGameReadinessUseCase(
     private val isEyeProtectionEnabled: () -> Boolean = { false },
     private val isSmartResolutionEnabled: suspend () -> Boolean = { false },
     private val isAdbInputRestricted: suspend () -> Boolean = { false },
+    private val isEyeProtectionWarningEnabled: suspend () -> Boolean = { true },
 ) {
     /**
      * @param clientType   游戏客户端类型(用于解析包名)
@@ -119,7 +120,8 @@ class CheckGameReadinessUseCase(
                     && asks(TaskStartAcknowledgement.SMART_RESOLUTION_ENABLED, isSmartResolutionEnabled) ->
                 GameReadiness.RequiresConfirmation(TaskStartAcknowledgement.SMART_RESOLUTION_ENABLED)
 
-            asks(TaskStartAcknowledgement.EYE_PROTECTION_ENABLED) { isEyeProtectionEnabled() } ->
+            isEyeProtectionWarningEnabled()
+                    && asks(TaskStartAcknowledgement.EYE_PROTECTION_ENABLED) { isEyeProtectionEnabled() } ->
                 GameReadiness.RequiresConfirmation(TaskStartAcknowledgement.EYE_PROTECTION_ENABLED)
 
             else -> ready

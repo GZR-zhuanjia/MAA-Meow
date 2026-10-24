@@ -146,6 +146,8 @@
     <string name="settings_shizuku_launch_app_loading">Loading app list…</string>
     <string name="settings_shizuku_launch_app_search_hint">Search app name or package</string>
     <string name="settings_shizuku_launch_app_empty">No matching apps found</string>
+    <string name="settings_eye_protection_warning_title">Eye comfort mode startup reminder</string>
+    <string name="settings_eye_protection_warning_desc">Warn before starting tasks when eye comfort or night mode is enabled</string>
     <string name="settings_deploy_with_pause">Pause Trick</string>
     <string name="settings_deploy_with_pause_desc">Copilot only. Experimental, not recommended for now</string>
     <string name="settings_force_fullscreen_on_virtual_display">Force fullscreen in background mode</string>
@@ -1870,6 +1872,7 @@ MAA will not end an in-progress exploration early because this option is uncheck
     <string name="task_start_warning_wake_up_skipped">The game is not running and this run starts partway through, skipping the Login task. Continuing may fail immediately. Start anyway?</string>
     <string name="task_start_warning_game_not_installed">The game package for the current client type was not detected. Check the client type in Wake Up. Start anyway?</string>
     <string name="task_start_warning_eye_protection_enabled">Eye comfort / night mode is enabled, which may affect color recognition accuracy. Start anyway?</string>
+    <string name="task_start_warning_dont_remind_again">Don\'t remind again</string>
     <string name="task_start_warning_adb_input_restricted">“USB debugging (Security settings)” is off, so the system blocks MaaMeow\'s touch input. Please enable it in Developer options (reboot if it does not take effect). Start anyway?</string>
     <string name="task_start_enable_adb_input_with_root">Enable with Root</string>
     <string name="task_start_fix_open_developer_settings">Open Developer options</string>

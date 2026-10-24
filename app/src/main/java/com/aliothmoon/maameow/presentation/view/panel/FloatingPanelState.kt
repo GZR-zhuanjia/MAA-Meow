@@ -63,4 +63,5 @@ data class PanelDialogUiState(
     val dismissText: UiText? = null,
     val confirmAction: PanelDialogConfirmAction = PanelDialogConfirmAction.DISMISS_ONLY,
     val fixAction: PanelDialogFixAction? = null,
+    val showDontRemindAgain: Boolean = false,
 )

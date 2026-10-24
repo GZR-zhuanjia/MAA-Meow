@@ -67,7 +67,7 @@ internal fun Context.createStartWarningDialog(
 ): PanelDialogUiState = createStartWarningDialog(
     message,
     startWarningFix(acknowledgement, RemoteAccessCoordinator.configuredBackend()),
-)
+).copy(showDontRemindAgain = acknowledgement == TaskStartAcknowledgement.EYE_PROTECTION_ENABLED)
 
 /** 能就地解决的前置检查给出修复动作，鼓励先改掉再启动 */
 internal fun startWarningFix(

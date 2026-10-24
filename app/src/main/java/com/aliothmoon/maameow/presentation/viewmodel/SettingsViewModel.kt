@@ -276,6 +276,14 @@ class SettingsViewModel(
         }
     }
 
+    val eyeProtectionWarningEnabled: StateFlow<Boolean> = appSettingsManager.eyeProtectionWarningEnabled
+
+    fun setEyeProtectionWarningEnabled(enabled: Boolean) {
+        viewModelScope.launch {
+            appSettingsManager.setEyeProtectionWarningEnabled(enabled)
+        }
+    }
+
     val deployWithPause: StateFlow<Boolean> = appSettingsManager.deployWithPause
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
 

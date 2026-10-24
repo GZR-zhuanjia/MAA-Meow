@@ -7,6 +7,7 @@ import com.aliothmoon.maameow.R
 import com.aliothmoon.maameow.data.model.LogItem
 import com.aliothmoon.maameow.data.model.TaskParamProvider
 import com.aliothmoon.maameow.data.model.TaskTypeInfo
+import com.aliothmoon.maameow.data.preferences.AppSettingsManager
 import com.aliothmoon.maameow.data.preferences.TaskChainState
 import com.aliothmoon.maameow.domain.launch.PlanSideTaskRunner
 import com.aliothmoon.maameow.domain.service.AchievementReporter
@@ -44,6 +45,7 @@ class ExpandedControlPanelViewModel(
     private val sessionLogger: MaaSessionLogger,
     private val achievementReporter: AchievementReporter,
     private val sideTaskRunner: PlanSideTaskRunner,
+    private val appSettingsManager: AppSettingsManager,
 ) : ViewModel() {
 
     private val _state = MutableStateFlow(FloatingPanelState())
@@ -236,8 +238,9 @@ class ExpandedControlPanelViewModel(
         _state.update { it.copy(dialog = null) }
     }
 
-    fun onDialogConfirm() {
-        when (state.value.dialog?.confirmAction) {
+    fun onDialogConfirm(dontRemindAgain: Boolean = false) {
+        val dialog = state.value.dialog
+        when (dialog?.confirmAction) {
             PanelDialogConfirmAction.DISMISS_ONLY -> {
                 onDialogDismiss()
             }
@@ -247,7 +250,12 @@ class ExpandedControlPanelViewModel(
                 _state.update { it.copy(dialog = null) }
                 pendingStartContext = null
                 if (pending != null) {
-                    launchManualStart(pending)
+                    viewModelScope.launch {
+                        if (dontRemindAgain && dialog.showDontRemindAgain) {
+                            appSettingsManager.setEyeProtectionWarningEnabled(false)
+                        }
+                        launchManualStart(pending)
+                    }
                 }
             }
 

@@ -583,8 +583,9 @@ class BackgroundTaskViewModel(
         _state.update { it.copy(dialog = null) }
     }
 
-    fun onDialogConfirm() {
-        when (state.value.dialog?.confirmAction) {
+    fun onDialogConfirm(dontRemindAgain: Boolean = false) {
+        val dialog = state.value.dialog
+        when (dialog?.confirmAction) {
             PanelDialogConfirmAction.DISMISS_ONLY -> {
                 onDialogDismiss()
             }
@@ -594,7 +595,12 @@ class BackgroundTaskViewModel(
                 _state.update { it.copy(dialog = null) }
                 pendingStart = null
                 if (pending != null) {
-                    launchManualStart(pending.context)
+                    viewModelScope.launch {
+                        if (dontRemindAgain && dialog.showDontRemindAgain) {
+                            appSettingsManager.setEyeProtectionWarningEnabled(false)
+                        }
+                        launchManualStart(pending.context)
+                    }
                 }
             }
 

@@ -166,6 +166,7 @@ fun SettingsView(
     val shizukuLaunchPackage by viewModel.shizukuLaunchPackage.collectAsStateWithLifecycle()
     val liveUpdateEntryVisible by viewModel.liveUpdateEntryVisible.collectAsStateWithLifecycle()
     val deployWithPause by viewModel.deployWithPause.collectAsStateWithLifecycle()
+    val eyeProtectionWarningEnabled by viewModel.eyeProtectionWarningEnabled.collectAsStateWithLifecycle()
     val telemetryEnabled by viewModel.telemetryEnabled.collectAsStateWithLifecycle()
     val reportToPenguin by viewModel.reportToPenguin.collectAsStateWithLifecycle()
     val reportToYituliu by viewModel.reportToYituliu.collectAsStateWithLifecycle()
@@ -836,7 +837,7 @@ fun SettingsView(
                     }
                 }
 
-                // 任务设置：划火柴模式、MAA 任务覆盖、自定义游戏包名
+                // 任务设置：护眼提醒、划火柴模式、MAA 任务覆盖、自定义游戏包名
                 item {
                     CollapsibleSection(
                         title = stringResource(R.string.settings_section_task),
@@ -844,6 +845,16 @@ fun SettingsView(
                         revealToken = revealToken(SettingsSections.TASK),
                     ) {
                         SettingsGroupCard {
+                            SettingSearchTarget(R.string.settings_eye_protection_warning_title) {
+                                SettingSwitchItem(
+                                    title = stringResource(R.string.settings_eye_protection_warning_title),
+                                    description = stringResource(R.string.settings_eye_protection_warning_desc),
+                                    contentColor = contentColor,
+                                    checked = eyeProtectionWarningEnabled,
+                                    onCheckedChange = viewModel::setEyeProtectionWarningEnabled,
+                                )
+                            }
+                            ListItemDivider()
                             SettingSearchTarget(R.string.settings_deploy_with_pause) {
                                 SettingSwitchItem(
                                     title = stringResource(R.string.settings_deploy_with_pause),

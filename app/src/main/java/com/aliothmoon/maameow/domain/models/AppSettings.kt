@@ -54,6 +54,10 @@ data class AppSettings(
     @PrefKey(default = "false")
     val muteOnGameLaunch: String = "false",
 
+    /** 手动启动时提示护眼/夜光模式可能影响图像识别。 */
+    @PrefKey(default = "true")
+    val eyeProtectionWarningEnabled: String = "true",
+
     /** 非空表示该包可能残留 MaaMeow 设置的静音，需要在关闭或重连时恢复。 */
     @PrefKey(default = "")
     val mutedGamePackage: String = "",
