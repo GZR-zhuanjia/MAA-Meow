@@ -358,23 +358,15 @@ class TaskChainState(
         }
     }
 
-    suspend fun clearRecruitUseExpeditedFlags() {
-        mutate { current ->
-            for (i in current.indices) {
-                val node = current[i]
-                if (!node.enabled) continue
-                when (val cfg = node.config) {
-                    is RecruitConfig -> if (cfg.useExpedited) {
-                        current[i] = node.copy(config = cfg.copy(useExpedited = false))
-                        Timber.d(
-                            "clearRecruitUseExpeditedFlags on node %s", node.id
-                        )
-                    }
-
-                    else -> {}
-                }
-            }
+    /** 按结束轮次的节点 ID 清理，异步收尾时切 Profile 也不会改到下一轮。 */
+    suspend fun clearRecruitUseExpeditedFlags(nodeIds: Set<String> = _chain.value.map { it.id }.toSet()) {
+        val clear = { node: TaskChainNode ->
+            val config = node.config
+            if (node.id in nodeIds && node.enabled && config is RecruitConfig && config.useExpedited) {
+                node.copy(config = config.copy(useExpedited = false))
+            } else node
         }
+        mutate(others = { chain -> chain.map(clear) }) { current -> current.replaceAll { clear(it) } }
     }
 
     /**

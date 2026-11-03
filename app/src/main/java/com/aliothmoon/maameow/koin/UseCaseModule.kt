@@ -66,9 +66,11 @@ val useCaseModule = module {
         )
     }
     factory {
+        val launchMutex = get<com.aliothmoon.maameow.domain.launch.LaunchMutex>()
         PrepareTaskStartUseCase(
             analyzeTaskChainUseCase = get(),
             checkGameReadiness = get(),
+            profileChainRunning = { launchMutex.current?.label == "profile-chain" },
         )
     }
 }

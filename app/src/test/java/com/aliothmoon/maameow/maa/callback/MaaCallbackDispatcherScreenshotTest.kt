@@ -41,8 +41,8 @@ class MaaCallbackDispatcherScreenshotTest {
         // IDLE 会触发关游戏、息屏，截图必须在它之前
         verifyOrder {
             notificationCenter.captureCompletionScreenshot()
-            stateHolder.reportRunState(MaaExecutionState.IDLE)
             taskChainHandler.onAllTasksCompleted(asStopped = false, screenshot = screenshot)
+            stateHolder.reportRunCompleted(true)
         }
     }
 

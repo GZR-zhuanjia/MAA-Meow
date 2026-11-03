@@ -84,6 +84,7 @@ import com.aliothmoon.maameow.presentation.components.rememberWheelTimePickerSta
 import com.aliothmoon.maameow.presentation.components.tip.ExpandableTipContent
 import com.aliothmoon.maameow.presentation.components.tip.ExpandableTipIcon
 import com.aliothmoon.maameow.schedule.model.ScheduleHealthIssue
+import com.aliothmoon.maameow.schedule.model.ScheduleExecutionMode
 import com.aliothmoon.maameow.schedule.model.ScheduleType
 import com.aliothmoon.maameow.schedule.service.ExactAlarmSettings
 import com.aliothmoon.maameow.schedule.service.OemPowerHints
@@ -504,7 +505,56 @@ fun ScheduleEditView(
                 Spacer(Modifier.height(MaaDesignTokens.Spacing.sectionGap))
                 SectionHeader(stringResource(R.string.schedule_section_task_config))
             }
-            item(key = "profile") {
+            item(key = "execution-mode") {
+                SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+                    ScheduleExecutionMode.entries.forEachIndexed { index, mode ->
+                        SegmentedButton(
+                            selected = state.executionMode == mode,
+                            onClick = { viewModel.onExecutionModeChanged(mode) },
+                            shape = SegmentedButtonDefaults.itemShape(index, ScheduleExecutionMode.entries.size),
+                        ) {
+                            Text(stringResource(if (mode == ScheduleExecutionMode.SINGLE) {
+                                R.string.schedule_execution_single
+                            } else R.string.schedule_execution_chain))
+                        }
+                    }
+                }
+            }
+            if (state.executionMode == ScheduleExecutionMode.CHAIN) {
+                item(key = "profile-chain") {
+                    Text(
+                        stringResource(R.string.schedule_profile_chain_hint),
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                    state.profileIds.forEachIndexed { index, id ->
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                "${index + 1}. " + (state.profiles.find { it.id == id }?.name
+                                    ?: stringResource(R.string.schedule_profile_missing_name, id)),
+                                modifier = Modifier.weight(1f),
+                            )
+                            TextButton(onClick = { viewModel.onMoveProfile(index, -1) }, enabled = index > 0) {
+                                Text(stringResource(R.string.schedule_profile_move_up))
+                            }
+                            TextButton(onClick = { viewModel.onMoveProfile(index, 1) }, enabled = index < state.profileIds.lastIndex) {
+                                Text(stringResource(R.string.schedule_profile_move_down))
+                            }
+                            IconButton(onClick = { viewModel.onRemoveProfile(index) }) {
+                                Icon(Icons.Default.Close, stringResource(R.string.schedule_profile_remove))
+                            }
+                        }
+                    }
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        state.profiles.filter { it.id !in state.profileIds }.forEach { profile ->
+                            AssistChip(
+                                onClick = { viewModel.onAddProfile(profile.id) },
+                                label = { Text(profile.name) },
+                                leadingIcon = { Icon(Icons.Default.Add, null, Modifier.size(18.dp)) },
+                            )
+                        }
+                    }
+                }
+            } else item(key = "profile") {
                 if (state.profiles.isEmpty()) {
                     Text(
                         text = stringResource(R.string.schedule_no_profiles),
@@ -528,6 +578,9 @@ fun ScheduleEditView(
                                 )
                             )
                         }
+                    }
+                    if (state.selectedProfileId != null && state.profiles.none { it.id == state.selectedProfileId }) {
+                        Text(stringResource(R.string.schedule_profile_missing_name, state.selectedProfileId.orEmpty()))
                     }
                     // 显示选中 Profile 的已启用任务摘要
                     val selectedProfile = state.profiles.find { it.id == state.selectedProfileId }

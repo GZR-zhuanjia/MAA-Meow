@@ -4,7 +4,7 @@ import timber.log.Timber
 
 /**
  * 自动化启动全局互斥：同一时刻至多一次 in-flight 启动流
- * 进程内内存；不跨进程；start 成功/失败后应立即 [release]，不占满 MAA RUNNING 全程
+ * 进程内内存；不跨进程；单配置在启动后释放，多配置任务链持有至整链结束。
  */
 class LaunchMutex {
 

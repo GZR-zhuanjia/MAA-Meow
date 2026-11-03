@@ -238,6 +238,9 @@ class TaskChainHandler(
         }
     }
 
+    val hasTaskErrors: Boolean
+        get() = statusTracker.tasks.value.any { it.status == TaskRunStatus.ERROR }
+
     /**
      * AllTasksCompleted (3): 所有任务完成
      * 附带任务总耗时和理智恢复时间信息
@@ -297,8 +300,9 @@ class TaskChainHandler(
             notificationCenter.notifyAllTasksCompleted(message, screenshot)
         }
 
+        val nodeIds = taskChainState.chain.value.map { it.id }.toSet()
         callbackScope.launch {
-            taskChainState.clearRecruitUseExpeditedFlags()
+            taskChainState.clearRecruitUseExpeditedFlags(nodeIds)
         }
     }
 

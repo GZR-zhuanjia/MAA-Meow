@@ -15,11 +15,15 @@ import com.aliothmoon.maameow.utils.i18n.wakeUpClientTypeLabel
 class PrepareTaskStartUseCase(
     private val analyzeTaskChainUseCase: AnalyzeTaskChainUseCase,
     private val checkGameReadiness: CheckGameReadinessUseCase,
+    private val profileChainRunning: () -> Boolean = { false },
 ) {
     suspend operator fun invoke(
         chain: List<TaskChainNode>,
         context: TaskStartContext,
     ): TaskStartDecision {
+        if (context.mode == TaskStartMode.MANUAL && profileChainRunning()) {
+            return TaskStartDecision.Blocked(TaskStartDecisionReason.PROFILE_CHAIN_RUNNING)
+        }
         val plan = when (val analyzeResult = analyzeTaskChainUseCase(chain, context.fromNodeId)) {
             is AnalyzeTaskChainResult.Ready -> analyzeResult.plan
             is AnalyzeTaskChainResult.Blocked -> {
@@ -90,6 +94,7 @@ enum class TaskStartAcknowledgement(val message: UiText) {
 
 /** 拦截原因，文案随枚举走，定时与手动入口共用 */
 enum class TaskStartDecisionReason(val message: UiText) {
+    PROFILE_CHAIN_RUNNING(uiTextOf(R.string.schedule_profile_chain_running)),
     NO_TASK_SELECTED(uiTextOf(R.string.task_start_error_no_task_selected)),
     CONFLICTING_CLIENT_TYPES(uiTextOf(R.string.task_start_error_conflicting_client_types)),
     NO_EXECUTABLE_TASKS(uiTextOf(R.string.task_start_error_no_executable_tasks)),

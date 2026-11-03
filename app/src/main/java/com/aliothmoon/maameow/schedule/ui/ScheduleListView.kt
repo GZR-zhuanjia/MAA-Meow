@@ -234,7 +234,14 @@ fun ScheduleListView(
                 }
             } else {
                 items(state.strategies, key = { it.id }) { strategy ->
-                    val profileName = state.profiles.find { it.id == strategy.profileId }?.name
+                    val profileName = strategy.effectiveProfileIds.joinToString(" → ") { id ->
+                        state.profiles.find { it.id == id }?.name
+                            ?: context.getString(R.string.schedule_profile_missing_name, id)
+                    }.let { names ->
+                        stringResource(if (strategy.executionMode == com.aliothmoon.maameow.schedule.model.ScheduleExecutionMode.CHAIN) {
+                            R.string.schedule_execution_chain
+                        } else R.string.schedule_execution_single) + ": " + names
+                    }
                     StrategyCard(
                         strategy = strategy,
                         profileName = profileName,

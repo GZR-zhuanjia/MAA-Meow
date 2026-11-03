@@ -14,6 +14,8 @@ import com.aliothmoon.maameow.schedule.model.ScheduleHealthIssue
 import com.aliothmoon.maameow.schedule.model.ScheduleHealthLogic
 import com.aliothmoon.maameow.schedule.model.ScheduleHealthSnapshot
 import com.aliothmoon.maameow.schedule.model.ScheduleStrategy
+import com.aliothmoon.maameow.schedule.model.ScheduleExecutionMode
+import com.aliothmoon.maameow.schedule.model.isValidProfileSequence
 import com.aliothmoon.maameow.schedule.model.ScheduleType
 import com.aliothmoon.maameow.schedule.service.ScheduleAlarmManager
 import com.aliothmoon.maameow.utils.i18n.UiText
@@ -47,6 +49,8 @@ data class ScheduleEditUiState(
     // 通用
     val profiles: List<TaskProfile> = emptyList(),
     val selectedProfileId: String? = null,
+    val executionMode: ScheduleExecutionMode = ScheduleExecutionMode.SINGLE,
+    val profileIds: List<String> = emptyList(),
     val forceStart: Boolean = false,
     val autoScreenSaver: Boolean = false,
     val hardwareScreenOff: Boolean = false,
@@ -131,6 +135,8 @@ class ScheduleEditViewModel(
                         intervalHours = (totalMinutes % (24 * 60)) / 60,
                         profiles = profiles,
                         selectedProfileId = strategy.profileId,
+                        executionMode = strategy.executionMode,
+                        profileIds = strategy.profileIds,
                         forceStart = strategy.forceStart,
                         autoScreenSaver = strategy.autoScreenSaver,
                         hardwareScreenOff = strategy.hardwareScreenOff,
@@ -176,6 +182,37 @@ class ScheduleEditViewModel(
 
     fun onIntervalHoursChanged(hours: Int) {
         _state.update { it.copy(intervalHours = hours.coerceIn(0, 23)) }
+    }
+
+    fun onExecutionModeChanged(mode: ScheduleExecutionMode) {
+        _state.update {
+            it.copy(
+                executionMode = mode,
+                profileIds = if (mode == ScheduleExecutionMode.CHAIN && it.profileIds.isEmpty()) {
+                    listOfNotNull(it.selectedProfileId)
+                } else it.profileIds,
+            )
+        }
+    }
+
+    fun onAddProfile(id: String) {
+        _state.update { if (id in it.profileIds) it else it.copy(profileIds = it.profileIds + id) }
+    }
+
+    fun onRemoveProfile(index: Int) {
+        _state.update { it.copy(profileIds = it.profileIds.filterIndexed { i, _ -> i != index }) }
+    }
+
+    fun onMoveProfile(index: Int, offset: Int) {
+        _state.update { state ->
+            val ids = state.profileIds.toMutableList()
+            if (index !in ids.indices || index + offset !in ids.indices) state
+            else {
+                val id = ids.removeAt(index)
+                ids.add(index + offset, id)
+                state.copy(profileIds = ids)
+            }
+        }
     }
 
     fun onSelectProfile(profileId: String) {
@@ -263,8 +300,17 @@ class ScheduleEditViewModel(
             _state.update { it.copy(errorMessage = uiTextOf(R.string.schedule_error_name_required)) }
             return
         }
-        if (current.selectedProfileId == null) {
+        if (current.selectedProfileId == null && current.executionMode == ScheduleExecutionMode.SINGLE) {
             _state.update { it.copy(errorMessage = uiTextOf(R.string.schedule_error_profile_required)) }
+            return
+        }
+        val profileIds = if (current.executionMode == ScheduleExecutionMode.CHAIN) {
+            current.profileIds
+        } else listOfNotNull(current.selectedProfileId)
+        if (!profileIds.isValidProfileSequence(current.executionMode == ScheduleExecutionMode.CHAIN)
+            || profileIds.any { id -> taskChainState.profiles.value.none { it.id == id } }
+        ) {
+            _state.update { it.copy(errorMessage = uiTextOf(R.string.schedule_error_profile_chain)) }
             return
         }
         when (current.scheduleType) {
@@ -307,7 +353,9 @@ class ScheduleEditViewModel(
                     executionTimes = current.executionTimes,
                     startTimeMs = current.startTimeMs,
                     intervalMinutes = intervalMinutes,
-                    profileId = current.selectedProfileId,
+                    profileId = profileIds.first(),
+                    executionMode = current.executionMode,
+                    profileIds = current.profileIds,
                     forceStart = current.forceStart,
                     autoScreenSaver = current.autoScreenSaver,
                     hardwareScreenOff = current.hardwareScreenOff,
@@ -325,7 +373,9 @@ class ScheduleEditViewModel(
                     executionTimes = current.executionTimes,
                     startTimeMs = current.startTimeMs,
                     intervalMinutes = intervalMinutes,
-                    profileId = current.selectedProfileId,
+                    profileId = profileIds.first(),
+                    executionMode = current.executionMode,
+                    profileIds = current.profileIds,
                     forceStart = current.forceStart,
                     autoScreenSaver = current.autoScreenSaver,
                     hardwareScreenOff = current.hardwareScreenOff,

@@ -22,7 +22,9 @@ object LaunchIntentMapper {
     ): LaunchRequest = LaunchRequest(
         requestId = requestId,
         source = LaunchSource.Schedule,
-        profileId = strategy.profileId,
+        profileId = strategy.effectiveProfileIds.firstOrNull() ?: strategy.profileId,
+        profileIds = strategy.effectiveProfileIds,
+        isProfileChain = strategy.executionMode == com.aliothmoon.maameow.schedule.model.ScheduleExecutionMode.CHAIN,
         displayName = strategy.name,
         scheduledTimeMs = scheduledTimeMs,
         forceStart = strategy.forceStart,
@@ -65,6 +67,7 @@ object LaunchIntentMapper {
             putExtra(ScheduledExecutionRequest.EXTRA_STRATEGY_ID, request.strategyId)
             putExtra(ScheduledExecutionRequest.EXTRA_STRATEGY_NAME, request.displayName)
             putExtra(ScheduledExecutionRequest.EXTRA_PROFILE_ID, request.profileId)
+            putStringArrayListExtra(ScheduledExecutionRequest.EXTRA_PROFILE_IDS, ArrayList(request.effectiveProfileIds))
             putExtra(ScheduledExecutionRequest.EXTRA_SCHEDULED_TIME, request.scheduledTimeMs)
             putExtra(ScheduledExecutionRequest.EXTRA_FORCE_START, request.forceStart)
             putExtra(

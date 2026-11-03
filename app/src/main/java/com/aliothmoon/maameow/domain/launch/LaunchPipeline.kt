@@ -17,6 +17,7 @@ import com.aliothmoon.maameow.domain.state.MaaExecutionState
 import com.aliothmoon.maameow.domain.usecase.TaskStartContext
 import com.aliothmoon.maameow.domain.usecase.TaskStartMode
 import com.aliothmoon.maameow.schedule.data.ScheduleStrategyRepository
+import com.aliothmoon.maameow.schedule.model.isValidProfileSequence
 import com.aliothmoon.maameow.schedule.model.ExecutionResult
 import com.aliothmoon.maameow.schedule.service.ScheduleTriggerLogger
 import com.aliothmoon.maameow.utils.i18n.UiText
@@ -112,7 +113,15 @@ class LaunchPipeline(
 
     fun submit(event: LaunchUserEvent) {
         when (event) {
-            LaunchUserEvent.Cancel -> cancelRequested.set(true)
+            LaunchUserEvent.Cancel -> {
+                cancelRequested.set(true)
+                val current = _session.value as? LaunchSession.InFlight
+                if (current?.request?.isProfileChain == true) scope.launch {
+                    if (activeRequestId.get() == current.request.requestId
+                        && compositionService.state.value == MaaExecutionState.RUNNING
+                    ) compositionService.stop()
+                }
+            }
             LaunchUserEvent.StartNow -> startNowRequested.set(true)
         }
     }
@@ -127,10 +136,7 @@ class LaunchPipeline(
     }
 
     private suspend fun runPipeline(request: LaunchRequest) {
-        cancelRequested.set(false)
-        startNowRequested.set(false)
-
-        if (!mutex.tryAcquire(request.requestId)) {
+        if (!mutex.tryAcquire(request.requestId, if (request.isProfileChain) "profile-chain" else "pipeline")) {
             if (request.forceStart) {
                 // 后端用不了还抢占，只会把别人停了、自己也起不来
                 remoteAccessBlocker()?.let {
@@ -145,7 +151,7 @@ class LaunchPipeline(
                     }
                 }
                 preemptInFlight(request)
-                mutex.forceAcquire(request.requestId)
+                mutex.forceAcquire(request.requestId, if (request.isProfileChain) "profile-chain" else "pipeline")
             } else {
                 finishWithoutHold(
                     request,
@@ -156,6 +162,8 @@ class LaunchPipeline(
             }
         }
 
+        cancelRequested.set(false)
+        startNowRequested.set(false)
         activeRequestId.set(request.requestId)
         var terminalResult: ExecutionResult? = null
         var terminalMessage: UiText? = null
@@ -265,24 +273,21 @@ class LaunchPipeline(
 
             log.append(uiTextOf(R.string.schedule_log_wait_profile))
             chainState.isLoaded.first { it }
-            if (chainState.profileId.value != request.profileId) {
-                // 目标配置可能已删，取不到名字退回 ID
-                val profileName = chainState.profiles.value
-                    .find { it.id == request.profileId }?.name ?: request.profileId
-                log.append(uiTextOf(R.string.schedule_log_switch_profile, profileName))
-                chainState.switchProfile(request.profileId)
-            }
-            if (chainState.profileId.value != request.profileId) {
+            val profileIds = request.effectiveProfileIds
+            if (!profileIds.isValidProfileSequence(request.isProfileChain)) {
                 terminalResult = ExecutionResult.FAILED_VALIDATION
-                terminalMessage = uiTextOf(R.string.schedule_log_profile_missing)
+                terminalMessage = uiTextOf(R.string.schedule_error_profile_chain)
                 return
             }
+            for (id in profileIds) {
+                profileValidationError(id)?.let {
+                    terminalResult = ExecutionResult.FAILED_VALIDATION
+                    terminalMessage = it
+                    return
+                }
+            }
+            switchProfile(profileIds.first(), log)
             val enabled = chainState.chain.value.filter { it.enabled }
-            if (enabled.isEmpty()) {
-                terminalResult = ExecutionResult.FAILED_VALIDATION
-                terminalMessage = uiTextOf(R.string.schedule_log_empty_chain)
-                return
-            }
 
             // 前台无倒计时；后台 Dialog 倒计时，控制层需用户曾手动启动
             // 静默只在用手机时：待机没人碰屏幕，要靠拉起的界面保持常亮
@@ -371,34 +376,93 @@ class LaunchPipeline(
             setPhase(request, LaunchSession.Phase.Starting, presentation)
             log.append(uiTextOf(R.string.schedule_log_starting_tasks, enabled.size))
 
-            when (
-                val result = startTaskChain(
-                    chain = enabled,
-                    context = TaskStartContext(mode = TaskStartMode.SCHEDULED),
-                    scheduleLabel = request.displayName,
-                )
-            ) {
-                StartTaskChainUseCase.Result.Success -> {
-                    terminalResult = ExecutionResult.STARTED
-                    terminalMessage = null
-                    log.append(uiTextOf(R.string.schedule_log_start_success))
+            if (request.isProfileChain) {
+                // 撤销上一条单配置的结束动作；本链只在最终收尾一次。
+                taskEndRegistry.disarmOnce()
+                for ((index, id) in profileIds.withIndex()) {
+                    if (cancelRequested.get()) {
+                        terminalResult = ExecutionResult.CANCELLED
+                        outcome.chainEndReason = TaskEndRegistry.Reason.MANUAL
+                        break
+                    }
+                    profileValidationError(id)?.let {
+                        terminalResult = ExecutionResult.FAILED_VALIDATION
+                        terminalMessage = it
+                        return
+                    }
+                    switchProfile(id, log)
+                    log.append(uiTextOf(
+                        R.string.schedule_log_profile_progress,
+                        index + 1, profileIds.size, profileName(id),
+                    ))
+                    val round = taskEndRegistry.beginRound()
+                    try {
+                        when (val result = startTaskChain(
+                            chain = chainState.chain.value.filter { it.enabled },
+                            context = TaskStartContext(mode = TaskStartMode.SCHEDULED),
+                            scheduleLabel = request.displayName,
+                        )) {
+                            StartTaskChainUseCase.Result.Success -> {
+                                outcome.chainStarted = true
+                                setPhase(request, LaunchSession.Phase.Running, presentation)
+                                val end = round.await()
+                                outcome.chainEndReason = end.reason
+                                if (!end.completedNormally) {
+                                    terminalResult = if (end.reason == TaskEndRegistry.Reason.MANUAL) {
+                                        ExecutionResult.CANCELLED
+                                    } else ExecutionResult.FAILED_START
+                                    terminalMessage = uiTextOf(R.string.schedule_log_profile_interrupted, profileName(id))
+                                    break
+                                }
+                            }
+                            is StartTaskChainUseCase.Result.SuccessWithoutCore -> {
+                                outcome.chainStarted = true
+                                result.message?.let { log.append(it) }
+                            }
+                            is StartTaskChainUseCase.Result.Failed -> {
+                                outcome.chainStarted = outcome.chainStarted || compositionService.runGeneration > round.afterGeneration
+                                outcome.startFailureNotified = result.startFailureNotified
+                                terminalResult = result.executionResult
+                                terminalMessage = uiTextOf(R.string.schedule_log_profile_failed, profileName(id), result.message)
+                                break
+                            }
+                        }
+                        terminalResult = ExecutionResult.STARTED
+                    } finally {
+                        taskEndRegistry.releaseRound(round)
+                    }
                 }
+            } else {
+                when (
+                    val result = startTaskChain(
+                        chain = enabled,
+                        context = TaskStartContext(mode = TaskStartMode.SCHEDULED),
+                        scheduleLabel = request.displayName,
+                    )
+                ) {
+                    StartTaskChainUseCase.Result.Success -> {
+                        terminalResult = ExecutionResult.STARTED
+                        terminalMessage = null
+                        log.append(uiTextOf(R.string.schedule_log_start_success))
+                    }
 
-                is StartTaskChainUseCase.Result.SuccessWithoutCore -> {
-                    terminalResult = ExecutionResult.STARTED
-                    terminalMessage = null
-                    log.append(uiTextOf(R.string.schedule_log_side_task_only))
-                    // 旁路结果只有定时触发日志能持久保存
-                    result.message?.let { log.append(it) }
-                }
+                    is StartTaskChainUseCase.Result.SuccessWithoutCore -> {
+                        terminalResult = ExecutionResult.STARTED
+                        terminalMessage = null
+                        log.append(uiTextOf(R.string.schedule_log_side_task_only))
+                        // 旁路结果只有定时触发日志能持久保存
+                        result.message?.let { log.append(it) }
+                    }
 
-                is StartTaskChainUseCase.Result.Failed -> {
-                    outcome.startFailureNotified = result.startFailureNotified
-                    terminalResult = result.executionResult
-                    terminalMessage = result.message
-                    log.append(uiTextOf(R.string.schedule_log_start_failed, result.message))
+                    is StartTaskChainUseCase.Result.Failed -> {
+                        outcome.startFailureNotified = result.startFailureNotified
+                        terminalResult = result.executionResult
+                        terminalMessage = result.message
+                        log.append(uiTextOf(R.string.schedule_log_start_failed, result.message))
+                    }
                 }
             }
+
         } catch (e: CancellationException) {
             terminalResult = ExecutionResult.CANCELLED
             terminalMessage = uiTextOf(R.string.schedule_log_cancelled_preempt)
@@ -451,16 +515,35 @@ class LaunchPipeline(
                 )
             }
         } finally {
-            lastCompletedRequestId.set(request.requestId)
-            activeRequestId.compareAndSet(request.requestId, null)
-            mutex.release(request.requestId)
-            _session.update { cur ->
-                if (cur is LaunchSession.InFlight
-                    && cur.request.requestId == request.requestId
-                ) {
-                    LaunchSession.Idle
-                } else {
-                    cur
+            try {
+                if (request.isProfileChain && activeRequestId.get() == request.requestId) {
+                    if (outcome.chainStarted) {
+                        val reason = if (result == ExecutionResult.CANCELLED) {
+                            TaskEndRegistry.Reason.MANUAL
+                        } else outcome.chainEndReason
+                        onTaskEnd(
+                            reason,
+                            (outcome.backgroundRun && request.closeGameAfterTask) || appSettingsManager.closeAppOnTaskEnd.value,
+                            autoSleep,
+                            outcome.screenSaverEngaged,
+                            request.exitAppAfterTask,
+                        )
+                    } else if (outcome.screenSaverEngaged) screenSaver.hide()
+                }
+            } catch (e: Exception) {
+                Timber.e(e, "LaunchPipeline: profile chain cleanup failed")
+            } finally {
+                lastCompletedRequestId.set(request.requestId)
+                activeRequestId.compareAndSet(request.requestId, null)
+                mutex.release(request.requestId)
+                _session.update { cur ->
+                    if (cur is LaunchSession.InFlight
+                        && cur.request.requestId == request.requestId
+                    ) {
+                        LaunchSession.Idle
+                    } else {
+                        cur
+                    }
                 }
             }
             // 全局关游戏由 TaskEndRegistry 处理，这里不重复
@@ -470,14 +553,34 @@ class LaunchPipeline(
             val screenSaverEngaged = outcome.screenSaverEngaged
             val exitApp = request.exitAppAfterTask
             // Core 未起时 armOnce 看到 IDLE 会当场补跑，不能整段跳过，否则息屏锁屏不执行
-            if (result != ExecutionResult.STARTED) {
+            if (!request.isProfileChain && result != ExecutionResult.STARTED) {
                 if (screenSaverEngaged) screenSaver.hide()
-            } else if (closeGame || autoSleep || screenSaverEngaged || exitApp) {
+            } else if (!request.isProfileChain && (closeGame || autoSleep || screenSaverEngaged || exitApp)) {
                 taskEndRegistry.armOnce { reason ->
                     onTaskEnd(reason, closeGame, autoSleep, screenSaverEngaged, exitApp)
                 }
             }
         }
+    }
+
+    private fun profileName(id: String): String =
+        chainState.profiles.value.find { it.id == id }?.name ?: id
+
+    private fun profileValidationError(id: String): UiText? {
+        val profile = chainState.profiles.value.find { it.id == id }
+            ?: return uiTextOf(R.string.schedule_log_profile_failed, id, uiTextOf(R.string.schedule_log_profile_missing))
+        val chain = if (chainState.profileId.value == id) chainState.chain.value else profile.chain
+        return if (chain.none { it.enabled }) {
+            uiTextOf(R.string.schedule_log_profile_failed, profile.name, uiTextOf(R.string.schedule_log_empty_chain))
+        } else null
+    }
+
+    private suspend fun switchProfile(id: String, log: ScheduleTriggerLogger.Session) {
+        if (chainState.profileId.value != id) {
+            log.append(uiTextOf(R.string.schedule_log_switch_profile, profileName(id)))
+            chainState.switchProfile(id)
+        }
+        check(chainState.profileId.value == id) { "Profile unavailable: $id" }
     }
 
     private suspend fun preemptInFlight(incoming: LaunchRequest) {
@@ -659,6 +762,8 @@ class LaunchPipeline(
         var tookOverIdleDevice = false
         var screenSaverEngaged = false
         var startFailureNotified = false
+        var chainStarted = false
+        var chainEndReason = TaskEndRegistry.Reason.NATURAL
 
         /** 唤醒解锁没成时记下，收尾随结果交给遥测 */
         var unlock: UnlockAttempt? = null

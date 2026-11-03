@@ -1,6 +1,9 @@
 package com.aliothmoon.maameow.schedule
 
 import com.aliothmoon.maameow.domain.launch.LaunchSource
+import com.aliothmoon.maameow.schedule.model.ScheduleExecutionMode
+import com.aliothmoon.maameow.schedule.model.isValidProfileSequence
+import com.aliothmoon.maameow.utils.JsonUtils
 import com.aliothmoon.maameow.schedule.model.ScheduleStrategy
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
@@ -14,6 +17,22 @@ class LaunchIntentMapperTest {
         name = "定时任务-1",
         profileId = "profile-1",
     )
+
+    @Test
+    fun oldStrategyAndOrderedChain_roundTripIntoRequest() {
+        val json = JsonUtils.common
+        val old = json.decodeFromString<ScheduleStrategy>("""{"name":"Old","profileId":"legacy"}""")
+        assertEquals(listOf("legacy"), LaunchIntentMapper.fromStrategy(old, 1L).effectiveProfileIds)
+        val chain = strategy().copy(
+            executionMode = ScheduleExecutionMode.CHAIN,
+            profileIds = listOf("c", "a", "b"),
+        )
+        val restored = json.decodeFromString<ScheduleStrategy>(json.encodeToString(chain))
+        assertEquals(listOf("c", "a", "b"), LaunchIntentMapper.fromStrategy(restored, 1L).effectiveProfileIds)
+        assertEquals(true, restored.effectiveProfileIds.isValidProfileSequence(true))
+        assertEquals(false, listOf("a", "a").isValidProfileSequence(true))
+        assertEquals(false, listOf("a").isValidProfileSequence(true))
+    }
 
     @Test
     fun sameOccurrence_producesSameRequestId() {

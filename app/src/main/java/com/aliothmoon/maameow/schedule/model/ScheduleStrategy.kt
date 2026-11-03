@@ -21,6 +21,9 @@ enum class ScheduleType {
     INTERVAL,
 }
 
+@Serializable
+enum class ScheduleExecutionMode { SINGLE, CHAIN }
+
 /** 将 DayOfWeek 序列化为 ISO 数值（1=周一 … 7=周日） */
 object DayOfWeekSerializer : KSerializer<DayOfWeek> {
     override val descriptor: SerialDescriptor =
@@ -67,6 +70,8 @@ data class ScheduleStrategy(
     val intervalMinutes: Int? = null,
     /** 关联的任务配置 Profile ID */
     val profileId: String,
+    val executionMode: ScheduleExecutionMode = ScheduleExecutionMode.SINGLE,
+    val profileIds: List<String> = emptyList(),
     /** 有任务在跑时强制停再启 */
     val forceStart: Boolean = false,
     /** 运行期间屏保；仅后台，在用时不盖 */
@@ -87,4 +92,11 @@ data class ScheduleStrategy(
     val lastExecutedAt: Long? = null,
     val lastResult: ExecutionResult? = null,
     val lastResultMessage: String? = null,
-)
+) {
+    /** 旧策略只读 profileId；任务链保留原始顺序与无效 ID，交给验证报告。 */
+    val effectiveProfileIds: List<String>
+        get() = if (executionMode == ScheduleExecutionMode.CHAIN) profileIds else listOf(profileId)
+}
+
+fun List<String>.isValidProfileSequence(chain: Boolean): Boolean =
+    size >= (if (chain) 2 else 1) && all { it.isNotBlank() } && distinct().size == size

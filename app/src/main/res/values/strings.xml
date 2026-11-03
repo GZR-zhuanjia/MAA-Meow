@@ -3045,4 +3045,16 @@ MAA 不会因为取消勾选此选项而提前在局内结束探索</string>
     <string name="oper_progress_result_recognition">识别或操作失败</string>
     <string name="oper_progress_log_detail">%1$s：%2$s%3$s</string>
     <string name="oper_progress_log_summary">干员培养本轮处理结果：成功 %1$d，失败 %2$d，跳过 %3$d（专精启动也计入成功）</string>
+    <string name="schedule_execution_single">单配置</string>
+    <string name="schedule_execution_chain">任务链</string>
+    <string name="schedule_profile_chain_hint">按顺序运行至少两个不同配置。每个账号请启用「启动游戏」并设置账号；切号仅支持该任务已有的客户端能力。停止或错误会终止整链，结束操作只在整链结束时执行。</string>
+    <string name="schedule_profile_missing_name">配置已失效：%1$s</string>
+    <string name="schedule_profile_move_up">上移</string>
+    <string name="schedule_profile_move_down">下移</string>
+    <string name="schedule_profile_remove">移除配置</string>
+    <string name="schedule_error_profile_chain">请选择有效配置；任务链至少需要两个不同配置，不能重复或包含已删除配置。</string>
+    <string name="schedule_profile_chain_running">定时任务链正在运行，请先停止再手动启动。</string>
+    <string name="schedule_log_profile_progress">配置 %1$d/%2$d：%3$s</string>
+    <string name="schedule_log_profile_interrupted">配置「%1$s」未正常完成，任务链已终止。</string>
+    <string name="schedule_log_profile_failed">配置「%1$s」：%2$s</string>
 </resources>

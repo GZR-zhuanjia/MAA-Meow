@@ -7,6 +7,8 @@ interface MaaExecutionStateHolder {
 
     fun reportRunState(state: MaaExecutionState)
 
+    fun reportRunCompleted(completedNormally: Boolean) = reportRunState(MaaExecutionState.IDLE)
+
     /**
      * 回调侧请求中止整条任务队列
      *

@@ -8,6 +8,8 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
@@ -27,6 +29,8 @@ class TaskEndRegistryTest {
     private lateinit var composition: MaaCompositionService
     private lateinit var registry: TaskEndRegistry
 
+    private lateinit var transitions: Channel<MaaCompositionService.RunTransition>
+    private var generation = 0L
     private val state = MutableStateFlow(MaaExecutionState.IDLE)
 
     @Volatile
@@ -37,6 +41,8 @@ class TaskEndRegistryTest {
     @Before
     fun setUp() {
         scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+        transitions = Channel(Channel.UNLIMITED)
+        generation = 0
         state.value = MaaExecutionState.IDLE
         stopOrigin = MaaCompositionService.StopOrigin.USER
         emitted.clear()
@@ -44,6 +50,8 @@ class TaskEndRegistryTest {
         composition = mockk(relaxed = true) {
             every { state } returns this@TaskEndRegistryTest.state
             every { lastStopOrigin } answers { stopOrigin }
+            every { runGeneration } answers { generation }
+            every { runTransitions } returns transitions.receiveAsFlow()
         }
         registry = TaskEndRegistry(composition, scope).apply { start() }
         scope.launch { registry.taskEnded.collect { emitted.add(it) } }
@@ -58,15 +66,21 @@ class TaskEndRegistryTest {
     private suspend fun drive(vararg states: MaaExecutionState) {
         for (s in states) {
             delay(150)
+            val previous = state.value
+            if (s == MaaExecutionState.STARTING) generation++
             state.value = s
+            transitions.send(MaaCompositionService.RunTransition(
+                previous, s, stopOrigin, completedNormally = s == MaaExecutionState.IDLE, generation = generation,
+            ))
         }
         delay(300)
     }
 
     @Test
     fun runningToIdle_isNatural() = runBlocking<Unit> {
+        drive(MaaExecutionState.STARTING)
         registry.armOnce { pendingSeen.add(it) }
-        drive(MaaExecutionState.STARTING, MaaExecutionState.RUNNING, MaaExecutionState.IDLE)
+        drive(MaaExecutionState.RUNNING, MaaExecutionState.IDLE)
         assertEquals(listOf(TaskEndRegistry.Reason.NATURAL), emitted)
         assertEquals(listOf(TaskEndRegistry.Reason.NATURAL), pendingSeen)
     }
@@ -156,6 +170,8 @@ class TaskEndRegistryTest {
 
     @Test
     fun closeGameOn_naturalEnd_stopsVirtualDisplay() = runBlocking<Unit> {
+        scope.cancel()
+        scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
         TaskEndRegistry(composition, scope, closeGameOnEnd = { true }).start()
         drive(MaaExecutionState.RUNNING, MaaExecutionState.IDLE)
         coVerify(exactly = 1) { composition.stopVirtualDisplay() }
@@ -163,6 +179,8 @@ class TaskEndRegistryTest {
 
     @Test
     fun closeGameOn_manualStop_keepsGame() = runBlocking<Unit> {
+        scope.cancel()
+        scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
         TaskEndRegistry(composition, scope, closeGameOnEnd = { true }).start()
         stopOrigin = MaaCompositionService.StopOrigin.USER
         drive(MaaExecutionState.RUNNING, MaaExecutionState.STOPPING, MaaExecutionState.IDLE)
@@ -174,4 +192,39 @@ class TaskEndRegistryTest {
         drive(MaaExecutionState.RUNNING, MaaExecutionState.IDLE)
         coVerify(exactly = 0) { composition.stopVirtualDisplay() }
     }
+    @Test
+    fun profileRound_fastCompletionWaitsForDispatchAndSkipsGlobalClose() = runBlocking<Unit> {
+        scope.cancel()
+        scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+        registry = TaskEndRegistry(composition, scope, closeGameOnEnd = { true }).apply { start() }
+        val round = registry.beginRound()
+        generation++
+        transitions.send(MaaCompositionService.RunTransition(
+            MaaExecutionState.IDLE, MaaExecutionState.STARTING, stopOrigin, generation = generation,
+        ))
+        transitions.send(MaaCompositionService.RunTransition(
+            MaaExecutionState.STARTING, MaaExecutionState.RUNNING, stopOrigin, generation = generation,
+        ))
+        transitions.send(MaaCompositionService.RunTransition(
+            MaaExecutionState.RUNNING, MaaExecutionState.IDLE, stopOrigin, true, generation,
+        ))
+        // await 开始前结束也不会丢事件。
+        delay(100)
+        assertEquals(TaskEndRegistry.RoundEnd(TaskEndRegistry.Reason.NATURAL, true), round.await())
+        registry.releaseRound(round)
+        coVerify(exactly = 0) { composition.stopVirtualDisplay() }
+    }
+
+    @Test
+    fun profileRound_errorAndManualStopCannotAdvance() = runBlocking<Unit> {
+        for (manual in listOf(false, true)) {
+            val round = registry.beginRound()
+            drive(MaaExecutionState.STARTING, MaaExecutionState.RUNNING)
+            if (manual) drive(MaaExecutionState.STOPPING, MaaExecutionState.IDLE)
+            else drive(MaaExecutionState.ERROR)
+            assertEquals(false, round.await().completedNormally)
+            registry.releaseRound(round)
+        }
+    }
+
 }

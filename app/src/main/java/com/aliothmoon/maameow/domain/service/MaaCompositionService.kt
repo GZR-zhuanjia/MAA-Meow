@@ -51,6 +51,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.TimeoutCancellationException
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -95,6 +97,30 @@ class MaaCompositionService(
 
     private val _state = MutableStateFlow(MaaExecutionState.IDLE)
     val state: StateFlow<MaaExecutionState> = _state.asStateFlow()
+
+    data class RunTransition(
+        val previous: MaaExecutionState,
+        val current: MaaExecutionState,
+        val stopOrigin: StopOrigin,
+        val completedNormally: Boolean = false,
+        val generation: Long = 0,
+    )
+
+    @Volatile
+    var runGeneration: Long = 0
+        private set
+
+    private val transitions = Channel<RunTransition>(Channel.UNLIMITED)
+    /** Registry 唯一消费，不能用会合并快速状态变化的 StateFlow 判断整轮结束。 */
+    val runTransitions = transitions.receiveAsFlow()
+
+    override fun reportRunCompleted(completedNormally: Boolean) {
+        if (_state.value == MaaExecutionState.STOPPING) return
+        setRunState(
+            MaaExecutionState.IDLE,
+            completedNormally = completedNormally,
+        )
+    }
 
     /** 停止发起方：用户操作 / 回调侧（掉线等）中止 / 到达运行时长上限 */
     enum class StopOrigin { USER, CALLBACK, RUN_DURATION_LIMIT }
@@ -146,7 +172,9 @@ class MaaCompositionService(
         }
     }
 
-    private fun setRunState(state: MaaExecutionState) {
+    @Synchronized
+    private fun setRunState(state: MaaExecutionState, completedNormally: Boolean = false) {
+        val previous = _state.value
         // 仅在 STARTING 拉起前台服务；终态不做外部 stopService —
         // 快速失败时 stopService 可能抢在服务创建之前到达，系统会因
         // startForeground 契约未履行直接杀进程（RemoteServiceException）。
@@ -158,16 +186,19 @@ class MaaCompositionService(
                 stopBackgroundMonitors()
             }
             _state.value = state
+            if (previous != state) transitions.trySend(RunTransition(previous, state, lastStopOrigin, completedNormally, runGeneration))
             return
         }
         // specialUse 被系统拒绝时拉起 FGS 必崩，本轮降级为无进度通知运行
         val withFgs = !SpecialUseFgsGate.isDenied(context)
         lastStopOrigin = StopOrigin.USER
+        runGeneration++
         val runToken = liveCoordinator.beginRun()
         // 顺带提前拿断网闸门：这里在 IO 线程，留给 FGS 的 startForeground 拿会占主线程
         // 不起 FGS 就没人撤进度通知，闸门不能拿
         if (withFgs) liveCoordinator.prepareProgress(runToken)
         _state.value = state
+        if (previous != state) transitions.trySend(RunTransition(previous, state, lastStopOrigin, generation = runGeneration))
         if (withFgs) {
             TaskExecutionService.start(context)
         } else {
@@ -725,13 +756,6 @@ class MaaCompositionService(
         if (mode == RunMode.FOREGROUND) {
             screenGate.awaitClear()
         }
-        if (!maa.Start()) {
-            return failStart(
-                context.getString(R.string.runlog_maa_start_failed),
-                "START_ERROR",
-                StartResult.StartError
-            )
-        }
         // 计时与后台监视都先于 RUNNING 起，秒完的回调置 IDLE 时才能撤掉
         if (limitRunDuration && appSettings.runDurationLimitEnabled.value) {
             val limitMinutes = appSettings.runDurationLimitMinutes.value
@@ -740,7 +764,15 @@ class MaaCompositionService(
         if (mode == RunMode.BACKGROUND) {
             startBackgroundMonitors()
         }
+        // 先发布 RUNNING，避免同步/快速完成回调的 IDLE 被后续 RUNNING 覆盖。
         setRunState(MaaExecutionState.RUNNING)
+        if (!maa.Start()) {
+            return failStart(
+                context.getString(R.string.runlog_maa_start_failed),
+                "START_ERROR",
+                StartResult.StartError
+            )
+        }
         sessionLogger.appendAndWait(successMessage, LogLevel.SUCCESS)
         return StartResult.Success(maa.GetVersion())
     }
@@ -749,6 +781,7 @@ class MaaCompositionService(
         // 检查与切 STOPPING 须原子，被抢先则交给原流程
         if (!_state.compareAndSet(MaaExecutionState.RUNNING, MaaExecutionState.STOPPING)) return
         lastStopOrigin = StopOrigin.RUN_DURATION_LIMIT
+        transitions.trySend(RunTransition(MaaExecutionState.RUNNING, MaaExecutionState.STOPPING, lastStopOrigin, generation = runGeneration))
         try {
             Timber.i("Run duration limit reached: %d min, stopping", limitMinutes)
             sessionLogger.appendAndWait(

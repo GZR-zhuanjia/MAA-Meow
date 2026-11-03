@@ -2988,4 +2988,16 @@ MAA will not end an in-progress exploration early because this option is uncheck
     <string name="oper_progress_result_recognition">Recognition or operation failed</string>
     <string name="oper_progress_log_detail">%1$s: %2$s%3$s</string>
     <string name="oper_progress_log_summary">Operator training results: %1$d successful, %2$d failed, %3$d skipped (starting mastery also counts as success).</string>
+    <string name="schedule_execution_single">Single profile</string>
+    <string name="schedule_execution_chain">Profile chain</string>
+    <string name="schedule_profile_chain_hint">Run at least two different profiles in order. Enable Start game and configure the account in each profile; switching uses the clients already supported by that task. A stop or error ends the chain. End actions run once for the whole chain.</string>
+    <string name="schedule_profile_missing_name">Missing profile: %1$s</string>
+    <string name="schedule_profile_move_up">Up</string>
+    <string name="schedule_profile_move_down">Down</string>
+    <string name="schedule_profile_remove">Remove profile</string>
+    <string name="schedule_error_profile_chain">Select valid profiles. A chain requires at least two different profiles without duplicates or deleted profiles.</string>
+    <string name="schedule_profile_chain_running">A scheduled profile chain is running. Stop it before starting manually.</string>
+    <string name="schedule_log_profile_progress">Profile %1$d/%2$d: %3$s</string>
+    <string name="schedule_log_profile_interrupted">Profile “%1$s” did not complete normally. The chain has ended.</string>
+    <string name="schedule_log_profile_failed">Profile “%1$s”: %2$s</string>
 </resources>

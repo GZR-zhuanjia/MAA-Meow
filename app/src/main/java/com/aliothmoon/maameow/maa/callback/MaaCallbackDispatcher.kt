@@ -99,16 +99,17 @@ class MaaCallbackDispatcher(
 
     private fun handleAllTasksCompleted() {
         val stopping = stateHolder.currentRunState() == MaaExecutionState.STOPPING
+        val completedNormally = !taskChainHandler.hasTaskErrors
         var screenshot: NotificationImage? = null
         if (!stopping) {
             // 必须赶在 IDLE 之前：IDLE 一到 TaskEndRegistry 就会关游戏、息屏
             screenshot = notificationCenter.captureCompletionScreenshot()
-            stateHolder.reportRunState(MaaExecutionState.IDLE)
         }
         // 不依赖 details：全部完成的收尾（清运行时登记、写总结、发通知）
         // 不该因为这一条回调的 JSON 解析失败而被整个跳过
         taskChainHandler.onAllTasksCompleted(asStopped = stopping, screenshot = screenshot)
         sessionLogger.endSession(if (stopping) "STOPPED" else "COMPLETED")
+        if (!stopping) stateHolder.reportRunCompleted(completedNormally)
     }
 
     private fun handleTaskChainError(details: JSONObject?) {

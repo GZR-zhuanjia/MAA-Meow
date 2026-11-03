@@ -29,7 +29,13 @@ data class LaunchRequest(
     val exitAppAfterTask: Boolean = false,
     val strategyId: String = "",
     val countdownSeconds: Int = DEFAULT_COUNTDOWN_SECONDS,
+    /** 空列表保持外部单配置调用兼容。 */
+    val profileIds: List<String> = emptyList(),
+    val isProfileChain: Boolean = false,
 ) {
+    val effectiveProfileIds: List<String>
+        get() = if (isProfileChain) profileIds else listOf(profileId)
+
     companion object {
         const val DEFAULT_COUNTDOWN_SECONDS = 30
     }
@@ -52,6 +58,8 @@ sealed interface LaunchSession {
         data class Counting(val remainingSeconds: Int) : Phase
         data object Preparing : Phase
         data object Starting : Phase
+        /** 保留链的运行所有权，同时收起启动遮罩，允许用户正常停止。 */
+        data object Running : Phase
     }
 }
 
