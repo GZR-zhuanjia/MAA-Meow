@@ -11,13 +11,13 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
-import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
@@ -38,6 +38,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.automirrored.filled.ManageSearch
+import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.ContentPaste
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DeleteSweep
@@ -53,9 +55,8 @@ import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.UploadFile
 import androidx.compose.material.icons.filled.WarningAmber
 import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LocalMinimumInteractiveComponentSize
@@ -66,6 +67,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -88,6 +90,18 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.ui.semantics.CustomAccessibilityAction
+import androidx.compose.ui.semantics.customActions
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.onClick
+import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.semantics.toggleableState
+import androidx.compose.ui.state.ToggleableState
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextAlign
@@ -109,9 +123,11 @@ import com.aliothmoon.maameow.domain.state.MaaExecutionState
 import com.aliothmoon.maameow.presentation.LocalFloatingWindowContext
 import com.aliothmoon.maameow.presentation.components.CheckBoxWithExpandableTip
 import com.aliothmoon.maameow.presentation.components.CheckBoxWithLabel
+import com.aliothmoon.maameow.presentation.components.InlineConfirmPanel
 import com.aliothmoon.maameow.presentation.components.ITextField
 import com.aliothmoon.maameow.presentation.components.MasteryBadge
 import com.aliothmoon.maameow.presentation.components.OperAvatar
+import com.aliothmoon.maameow.presentation.components.PageBackHandler
 import com.aliothmoon.maameow.presentation.components.operRarityColor
 import com.aliothmoon.maameow.presentation.components.tip.ExpandableTipContent
 import com.aliothmoon.maameow.presentation.components.tip.ExpandableTipIcon
@@ -140,6 +156,7 @@ private data class CopilotTabUiSpec(
 @Composable
 fun AutoBattlePanel(
     modifier: Modifier = Modifier,
+    onSearchOpenChange: (Boolean) -> Unit = {},
     viewModel: CopilotViewModel = koinInject()
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
@@ -153,6 +170,8 @@ fun AutoBattlePanel(
     val compactButtonShape = RoundedCornerShape(8.dp)
     val compactButtonPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)
     val importFloatHint = stringResource(R.string.copilot_import_float_hint)
+    var searchOpen by rememberSaveable { mutableStateOf(false) }
+    LaunchedEffect(searchOpen) { onSearchOpenChange(searchOpen) }
 
     // SAF 文件选择器（浮窗环境下不可用）
     val filePicker = if (!isInFloatingWindow) {
@@ -420,13 +439,24 @@ fun AutoBattlePanel(
                                 }
                             },
                         )
-                        CopilotActionButton(
-                            text = stringResource(R.string.panel_autobattle_station),
-                            icon = Icons.Default.Public,
-                            filled = false,
-                            enabled = true,
-                            onClick = { Misc.openUriSafely(context, "https://prts.plus") },
-                        )
+                        // 浮窗不做站内搜索
+                        if (isInFloatingWindow) {
+                            CopilotActionButton(
+                                text = stringResource(R.string.panel_autobattle_station),
+                                icon = Icons.Default.Public,
+                                filled = false,
+                                enabled = true,
+                                onClick = { Misc.openUriSafely(context, PRTS_PLUS_URL) },
+                            )
+                        } else {
+                            CopilotActionButton(
+                                text = stringResource(R.string.copilot_search_title),
+                                icon = Icons.AutoMirrored.Filled.ManageSearch,
+                                filled = false,
+                                enabled = true,
+                                onClick = { searchOpen = true },
+                            )
+                        }
                     }
                 }
             }
@@ -728,32 +758,28 @@ fun AutoBattlePanel(
 
 
             if (battleListSupportedTab && (state.listModeActive || state.taskList.isNotEmpty())) {
-                item(key = "battle_list_header") {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(4.dp)
-                    ) {
-                        Text(
-                            stringResource(R.string.panel_autobattle_copilot_list),
-                            style = MaterialTheme.typography.bodyMedium,
-                            fontWeight = FontWeight.Medium
-                        )
-                        if (!state.listModeActive) {
-                            Text(
-                                stringResource(R.string.panel_autobattle_battle_list_inactive_hint),
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.error
+                // 列表长了也能随手清理
+                stickyHeader(key = "battle_list_header") {
+                    val showDifficulty = state.tabIndex != CopilotTabs.PARADOX
+                    val selected = state.taskList.firstOrNull { it.id == state.selectedListItemId }
+                    BattleListHeader(
+                        checked = state.taskList.count { it.isChecked },
+                        total = state.taskList.size,
+                        listModeActive = state.listModeActive,
+                        current = selected?.let {
+                            if (!showDifficulty) it.name else stringResource(
+                                R.string.panel_autobattle_current_item,
+                                it.name,
+                                stringResource(
+                                    if (it.isRaid) R.string.panel_autobattle_difficulty_raid
+                                    else R.string.panel_autobattle_difficulty_normal
+                                )
                             )
-                        }
-                        var sequenceTipExpanded by remember { mutableStateOf(false) }
-                        ExpandableTipIcon(
-                            expanded = sequenceTipExpanded,
-                            onExpandedChange = { sequenceTipExpanded = it })
-                        ExpandableTipContent(
-                            visible = sequenceTipExpanded,
-                            tipText = stringResource(R.string.panel_autobattle_sequence_tip)
-                        )
-                    }
+                        },
+                        enabled = controlsEnabled,
+                        onCleanUnchecked = viewModel::onCleanUnchecked,
+                        onClearList = viewModel::onClearList,
+                    )
                 }
                 if (state.taskList.isEmpty()) {
                     item(key = "battle_list_empty") {
@@ -788,34 +814,18 @@ fun AutoBattlePanel(
                                 haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                             },
                             onDragStopped = viewModel::onReorderSettled,
+                            showDifficulty = state.tabIndex != CopilotTabs.PARADOX,
                             onToggle = { viewModel.onToggleListItem(index) },
                             onLoad = { viewModel.onSelectListItem(index) },
+                            onRaidChange = { viewModel.onSetListItemRaid(item.id, it) },
+                            onDuplicate = { viewModel.onDuplicateListItem(item.id) },
                             onRemove = { viewModel.onRemoveFromList(index) },
-                            buttonShape = compactButtonShape,
-                            buttonPadding = compactButtonPadding,
                         )
                     }
                 }
-                item(key = "battle_list_actions") {
-                    // TODO: 恢复手动输入关卡名 + 添加普通/添加突袭功能
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        BattleListActionButton(
-                            text = stringResource(R.string.panel_autobattle_clear_unchecked),
-                            icon = Icons.Default.PlaylistRemove,
-                            enabled = controlsEnabled && state.taskList.any { !it.isChecked },
-                            onClick = viewModel::onCleanUnchecked,
-                        )
-                        BattleListActionButton(
-                            text = stringResource(R.string.panel_autobattle_clear_list),
-                            icon = Icons.Default.DeleteSweep,
-                            enabled = controlsEnabled && state.taskList.isNotEmpty(),
-                            destructive = true,
-                            onClick = viewModel::onClearList,
-                        )
-                    }
+                // 吸顶要等下一个吸顶项才会被顶走，零高度占位免得压住下面的提示
+                stickyHeader(key = "battle_list_end") {
+                    Spacer(modifier = Modifier.fillMaxWidth())
                 }
             }
 
@@ -838,6 +848,18 @@ fun AutoBattlePanel(
             }
         }
 
+        if (searchOpen) {
+            PageBackHandler { searchOpen = false }
+            CopilotSearchSheet(
+                copilotState = state,
+                onPick = viewModel::onPickFromSearch,
+                onAddSet = viewModel::onAddSetFromSearch,
+                onRemovePrts = viewModel::onRemovePrtsCopilot,
+                onRemoveListItem = viewModel::onRemoveListItem,
+                onClearList = viewModel::onClearList,
+                onClose = { searchOpen = false },
+            )
+        }
     }
 }
 
@@ -925,37 +947,117 @@ private fun CopilotTabGrid(
     }
 }
 
+/** 吸顶时底下的行会从它下面滚过，底色必须不透明（玻璃主题的 surface 带透明度） */
 @Composable
-private fun RowScope.BattleListActionButton(
-    text: String,
-    icon: ImageVector,
+private fun BattleListHeader(
+    checked: Int,
+    total: Int,
+    listModeActive: Boolean,
+    /** 详情卡当前载入的那一行，列表离详情卡远，靠这里认 */
+    current: String?,
     enabled: Boolean,
-    onClick: () -> Unit,
-    destructive: Boolean = false,
+    onCleanUnchecked: () -> Unit,
+    onClearList: () -> Unit,
 ) {
-    val colors = if (destructive) {
-        ButtonDefaults.filledTonalButtonColors(
-            containerColor = MaterialTheme.colorScheme.errorContainer,
-            contentColor = MaterialTheme.colorScheme.onErrorContainer,
-        )
-    } else {
-        ButtonDefaults.filledTonalButtonColors()
-    }
-    FilledTonalButton(
-        onClick = onClick,
-        enabled = enabled,
+    var tipExpanded by remember { mutableStateOf(false) }
+    var confirmClear by remember { mutableStateOf(false) }
+    Surface(
         shape = RoundedCornerShape(8.dp),
-        colors = colors,
-        contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
-        modifier = Modifier.weight(1f),
+        color = MaterialTheme.colorScheme.surface.copy(alpha = 1f),
+        shadowElevation = 2.dp,
+        modifier = Modifier.fillMaxWidth()
     ) {
-        Icon(
-            imageVector = icon,
-            contentDescription = null,
-            modifier = Modifier.size(18.dp)
-        )
-        Spacer(modifier = Modifier.width(6.dp))
-        Text(text = text, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Column(
+            modifier = Modifier.padding(start = 10.dp, end = 2.dp, top = 2.dp, bottom = 2.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                // 当前关卡只占剩余宽度，长了截断，不挤标题和按钮
+                Text(
+                    stringResource(R.string.panel_autobattle_copilot_list),
+                    style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.Medium,
+                    maxLines = 1,
+                    softWrap = false
+                )
+                if (total > 0) {
+                    Text(
+                        text = "$checked/$total",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        softWrap = false
+                    )
+                }
+                ExpandableTipIcon(expanded = tipExpanded, onExpandedChange = { tipExpanded = it })
+                Box(modifier = Modifier.weight(1f)) {
+                    if (current != null) {
+                        Surface(
+                            shape = RoundedCornerShape(6.dp),
+                            color = MaterialTheme.colorScheme.primaryContainer,
+                            contentColor = MaterialTheme.colorScheme.onPrimaryContainer
+                        ) {
+                            Text(
+                                text = current,
+                                style = MaterialTheme.typography.labelSmall,
+                                fontWeight = FontWeight.Bold,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                            )
+                        }
+                    }
+                }
+                IconButton(
+                    onClick = onCleanUnchecked,
+                    enabled = enabled && checked < total,
+                    modifier = Modifier.size(36.dp)
+                ) {
+                    Icon(
+                        Icons.Default.PlaylistRemove,
+                        contentDescription = stringResource(R.string.panel_autobattle_clear_unchecked),
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+                IconButton(
+                    onClick = { confirmClear = true },
+                    enabled = enabled && total > 0,
+                    modifier = Modifier.size(36.dp)
+                ) {
+                    Icon(
+                        Icons.Default.DeleteSweep,
+                        contentDescription = stringResource(R.string.panel_autobattle_clear_list),
+                        tint = if (enabled && total > 0) MaterialTheme.colorScheme.error
+                        else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.38f),
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+            }
+            if (!listModeActive) {
+                Text(
+                    stringResource(R.string.panel_autobattle_battle_list_inactive_hint),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.error
+                )
+            }
+            ExpandableTipContent(
+                visible = tipExpanded,
+                tipText = stringResource(R.string.panel_autobattle_sequence_tip)
+            )
+            InlineConfirmPanel(
+                visible = confirmClear,
+                message = stringResource(R.string.panel_autobattle_clear_list_confirm, total),
+                onConfirm = {
+                    confirmClear = false
+                    onClearList()
+                },
+                onDismiss = { confirmClear = false },
+                modifier = Modifier.padding(end = 8.dp, bottom = 6.dp)
+            )
+        }
     }
 }
 
@@ -965,64 +1067,144 @@ private fun ReorderableCollectionItemScope.BattleListRow(
     isDragging: Boolean,
     onDragStarted: () -> Unit,
     onDragStopped: () -> Unit,
+    showDifficulty: Boolean,
     onToggle: () -> Unit,
     onLoad: () -> Unit,
+    onRaidChange: (Boolean) -> Unit,
+    onDuplicate: () -> Unit,
     onRemove: () -> Unit,
-    buttonShape: RoundedCornerShape,
-    buttonPadding: PaddingValues,
 ) {
-    Surface(
-        shadowElevation = if (isDragging) 4.dp else 0.dp,
-        shape = RoundedCornerShape(6.dp),
-        color = MaterialTheme.colorScheme.surfaceVariant,
-        modifier = Modifier.fillMaxWidth()
+    val shape = RoundedCornerShape(6.dp)
+    val loadLabel = stringResource(R.string.common_load)
+    val toggleLabel = stringResource(R.string.panel_autobattle_toggle_checked)
+    val duplicateLabel = stringResource(R.string.panel_autobattle_duplicate_item)
+    val deleteLabel = stringResource(R.string.common_delete)
+    val normalLabel = stringResource(R.string.panel_autobattle_difficulty_normal)
+    val raidLabel = stringResource(R.string.panel_autobattle_difficulty_raid)
+    val switchLabel = stringResource(
+        R.string.panel_autobattle_switch_difficulty,
+        if (item.isRaid) normalLabel else raidLabel
+    )
+    val currentOnToggle by rememberUpdatedState(onToggle)
+    val currentOnLoad by rememberUpdatedState(onLoad)
+    val currentOnRaidChange by rememberUpdatedState(onRaidChange)
+    val currentOnDuplicate by rememberUpdatedState(onDuplicate)
+    val currentOnRemove by rememberUpdatedState(onRemove)
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .then(if (isDragging) Modifier.shadow(4.dp, shape) else Modifier)
+            .clip(shape)
+            .background(MaterialTheme.colorScheme.surfaceVariant)
+            // 整行点击载入详情，行内控件各自消费点击
+            .clickable(onClickLabel = loadLabel, onClick = onLoad)
+            // 开着任一无障碍服务时，每滚一帧都要遍历整屏未合并语义树（merge 无效）；
+            // 整行清成一个节点，子树不再参与遍历，其余操作走自定义动作
+            .clearAndSetSemantics {
+                contentDescription = item.name
+                toggleableState = ToggleableState(item.isChecked)
+                if (showDifficulty) stateDescription = if (item.isRaid) raidLabel else normalLabel
+                onClick(label = loadLabel) {
+                    currentOnLoad()
+                    true
+                }
+                customActions = buildList {
+                    add(CustomAccessibilityAction(toggleLabel) { currentOnToggle(); true })
+                    if (showDifficulty) {
+                        add(CustomAccessibilityAction(switchLabel) { currentOnRaidChange(!item.isRaid); true })
+                        add(CustomAccessibilityAction(duplicateLabel) { currentOnDuplicate(); true })
+                    }
+                    add(CustomAccessibilityAction(deleteLabel) { currentOnRemove(); true })
+                }
+            }
+            .padding(start = 2.dp, end = 4.dp, top = 2.dp, bottom = 2.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(4.dp)
     ) {
-        Row(
+        // 只有把手能拖，行的其余区域保持滚动 / 点击语义
+        Icon(
+            Icons.Default.DragIndicator,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier
-                .fillMaxWidth()
-                .padding(start = 2.dp, end = 4.dp, top = 2.dp, bottom = 2.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(4.dp)
-        ) {
-            // 只有把手能拖，行的其余区域保持滚动 / 点击语义
-            Icon(
-                Icons.Default.DragIndicator,
-                contentDescription = stringResource(R.string.panel_autobattle_drag_handle),
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier
-                    .size(32.dp)
-                    .draggableHandle(
-                        onDragStarted = { onDragStarted() },
-                        onDragStopped = onDragStopped,
-                    )
-                    .padding(6.dp)
-            )
-            CheckBoxWithLabel(
-                checked = item.isChecked,
-                onCheckedChange = { onToggle() },
-                label = item.name + if (item.isRaid) {
-                    stringResource(R.string.panel_autobattle_raid_suffix)
-                } else {
-                    ""
-                },
-                modifier = Modifier.weight(1f)
-            )
-            OutlinedButton(
-                onClick = onLoad,
-                shape = buttonShape,
-                contentPadding = buttonPadding
-            ) { Text(stringResource(R.string.common_load)) }
+                .size(32.dp)
+                .draggableHandle(
+                    onDragStarted = { onDragStarted() },
+                    onDragStopped = onDragStopped,
+                )
+                .padding(6.dp)
+        )
+        Checkbox(
+            checked = item.isChecked,
+            onCheckedChange = { onToggle() },
+            modifier = Modifier.size(20.dp)
+        )
+        Text(
+            text = item.name,
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier
+                .weight(1f)
+                .padding(horizontal = 4.dp, vertical = 6.dp)
+        )
+        if (showDifficulty) {
+            DifficultyToggle(isRaid = item.isRaid, onChange = onRaidChange)
             IconButton(
-                onClick = onRemove,
+                onClick = onDuplicate,
                 modifier = Modifier.size(32.dp)
             ) {
                 Icon(
-                    Icons.Default.Delete,
-                    contentDescription = stringResource(R.string.common_delete),
-                    tint = MaterialTheme.colorScheme.error,
+                    Icons.Default.ContentCopy,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.size(18.dp)
                 )
             }
+        }
+        IconButton(
+            onClick = onRemove,
+            modifier = Modifier.size(32.dp)
+        ) {
+            Icon(
+                Icons.Default.Delete,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.error,
+                modifier = Modifier.size(18.dp)
+            )
+        }
+    }
+}
+
+@Composable
+private fun DifficultyToggle(isRaid: Boolean, onChange: (Boolean) -> Unit) {
+    val shape = RoundedCornerShape(6.dp)
+    Row(
+        modifier = Modifier
+            .clip(shape)
+            .border(1.dp, MaterialTheme.colorScheme.outlineVariant, shape)
+    ) {
+        listOf(
+            false to R.string.panel_autobattle_difficulty_normal,
+            true to R.string.panel_autobattle_difficulty_raid,
+        ).forEach { (raid, labelRes) ->
+            val selected = raid == isRaid
+            Text(
+                text = stringResource(labelRes),
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
+                color = if (selected) {
+                    MaterialTheme.colorScheme.onPrimary
+                } else {
+                    MaterialTheme.colorScheme.onSurfaceVariant
+                },
+                maxLines = 1,
+                modifier = Modifier
+                    .background(if (selected) MaterialTheme.colorScheme.primary else Color.Transparent)
+                    .selectable(selected = selected, role = Role.RadioButton) { onChange(raid) }
+                    .padding(horizontal = 8.dp, vertical = 4.dp)
+            )
         }
     }
 }
@@ -1038,97 +1220,120 @@ private fun CopilotDetailCard(
     summary: OperatorSummaryData?,
     onOpenVideo: () -> Unit,
 ) {
+    var expanded by rememberSaveable { mutableStateOf(false) }
+    val operators = summary?.takeUnless { it.isEmpty }
+    val resourceDataManager: ResourceDataManager = koinInject()
+    // 整张卡查一次干员表，不让每格各自订阅
+    val nameIndex by resourceDataManager.nameIndex.collectAsStateWithLifecycle()
+    val characters = remember(operators, nameIndex) {
+        operators?.let { resourceDataManager.charactersOf(it) }.orEmpty()
+    }
     Surface(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(12.dp),
         color = MaterialTheme.colorScheme.surfaceVariant
     ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(10.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            SelectionContainer {
-                Text(
-                    text = doc.title.ifBlank { stageLabel },
-                    style = MaterialTheme.typography.titleMedium,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis
+        Column(modifier = Modifier.fillMaxWidth()) {
+            // 点击区贴卡片边缘，波纹才铺满
+            Column(
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable(
+                        onClickLabel = stringResource(
+                            if (expanded) R.string.common_collapse else R.string.common_expand
+                        )
+                    ) { expanded = !expanded }
+                    .padding(10.dp)
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    SelectionContainer(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = doc.title.ifBlank { stageLabel },
+                            style = MaterialTheme.typography.titleMedium,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            maxLines = if (expanded) 2 else 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                    Icon(
+                        if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+                CopilotMetaRow(
+                    // 无标题时标题位已是关卡名
+                    stageLabel = stageLabel.takeIf { doc.title.isNotBlank() }.orEmpty(),
+                    source = when {
+                        !fromWeb -> stringResource(R.string.panel_autobattle_source_local)
+                        copilotId > 0 -> stringResource(R.string.panel_autobattle_source_web, copilotId)
+                        // 列表里被校正过的作业站条目不带 id
+                        else -> stringResource(R.string.panel_autobattle_source_web_unnumbered)
+                    },
+                    fromWeb = fromWeb,
+                    hasVideo = videoUrl.isNotBlank(),
+                    onOpenVideo = onOpenVideo,
                 )
-            }
-            CopilotMetaRow(
-                // 无标题时标题位已是关卡名
-                stageLabel = stageLabel.takeIf { doc.title.isNotBlank() }.orEmpty(),
-                source = when {
-                    !fromWeb -> stringResource(R.string.panel_autobattle_source_local)
-                    copilotId > 0 -> stringResource(R.string.panel_autobattle_source_web, copilotId)
-                    // 列表里被校正过的作业站条目不带 id
-                    else -> stringResource(R.string.panel_autobattle_source_web_unnumbered)
-                },
-                fromWeb = fromWeb,
-                hasVideo = videoUrl.isNotBlank(),
-                onOpenVideo = onOpenVideo,
-            )
-
-            if (doc.details.isNotBlank()) {
-                CopilotDetails(doc.details)
+                if (operators != null && !expanded) {
+                    OperatorStrip(operators, characters, modifier = Modifier.fillMaxWidth())
+                }
             }
 
             if (warnings.isNotEmpty()) {
-                CopilotWarnings(warnings)
+                Box(modifier = Modifier.padding(start = 10.dp, end = 10.dp, bottom = 10.dp)) {
+                    CopilotWarnings(warnings)
+                }
             }
 
-            if (summary != null && !summary.isEmpty) {
-                val resourceDataManager: ResourceDataManager = koinInject()
-                // 整张卡查一次干员表，不让每格各自订阅
-                val nameIndex by resourceDataManager.nameIndex.collectAsStateWithLifecycle()
-                val characters = remember(summary, nameIndex) {
-                    (summary.operators + summary.groups.flatMap { it.second })
-                        .associate { it.name to resourceDataManager.getCharacterByNameOrAlias(it.name) }
-                }
+            MaaAnimatedVisibility(visible = expanded) {
                 Column(
-                    modifier = Modifier.padding(top = 2.dp),
-                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                    modifier = Modifier.padding(start = 10.dp, end = 10.dp, bottom = 10.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
-                        Text(
-                            text = stringResource(R.string.panel_autobattle_operator_header),
-                            style = MaterialTheme.typography.titleSmall,
-                            color = MaterialTheme.colorScheme.onSurface
-                        )
-                        Surface(
-                            shape = RoundedCornerShape(50),
-                            color = MaterialTheme.colorScheme.surface
-                        ) {
-                            Text(
-                                text = summary.totalCount.toString(),
-                                style = MaterialTheme.typography.labelSmall,
-                                fontWeight = FontWeight.Bold,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.padding(horizontal = 7.dp, vertical = 1.dp)
-                            )
-                        }
+                    if (doc.details.isNotBlank()) {
+                        CopilotDetails(doc.details)
                     }
-                    if (summary.operators.isNotEmpty()) {
-                        OperatorGrid { OperatorCells(summary.operators, characters) }
-                    }
-                    summary.groups.forEach { (groupName, opers) ->
-                        OperatorGroup(groupName, opers, characters)
-                    }
+                    operators?.let { CopilotOperatorSection(it, characters) }
                 }
             }
         }
     }
 }
 
+@Composable
+private fun CopilotOperatorSection(summary: OperatorSummaryData, characters: Map<String, CharacterInfo?>) {
+    Column(
+        modifier = Modifier.padding(top = 2.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(6.dp)
+        ) {
+            Text(
+                text = stringResource(R.string.panel_autobattle_operator_header),
+                style = MaterialTheme.typography.titleSmall,
+                color = MaterialTheme.colorScheme.onSurface
+            )
+            CountBadge(summary.totalCount)
+        }
+        if (summary.operators.isNotEmpty()) {
+            OperatorGrid { OperatorCells(summary.operators, characters) }
+        }
+        summary.groups.forEach { (groupName, opers) ->
+            OperatorGroup(groupName, opers, characters)
+        }
+    }
+}
+
 /** 组内按序取首个可用干员，默认只露首选 */
 @Composable
-private fun OperatorGroup(
+internal fun OperatorGroup(
     name: String,
     opers: List<OperatorDisplayItem>,
     characters: Map<String, CharacterInfo?>,
@@ -1199,7 +1404,9 @@ private fun GroupToggleTile(expanded: Boolean, hidden: Int, onClick: () -> Unit)
     }
 }
 
-private const val DETAIL_COLLAPSED_LINES = 3
+internal const val PRTS_PLUS_URL = "https://prts.plus"
+
+private const val DETAIL_COLLAPSED_LINES = 2
 
 /** 作业 JSON 正常只有几十 KB，超限多半是选错了文件（ANDROID-13W） */
 private const val MAX_COPILOT_FILE_BYTES = 4 * 1024 * 1024
@@ -1304,7 +1511,7 @@ private fun MetaChip(
 }
 
 @Composable
-private fun CopilotDetails(details: String) {
+internal fun CopilotDetails(details: String) {
     var expanded by rememberSaveable(details) { mutableStateOf(false) }
     var overflowed by remember(details) { mutableStateOf(false) }
     val accent = MaterialTheme.colorScheme.primary.copy(alpha = 0.5f)
@@ -1393,7 +1600,7 @@ private val OPER_RARITY_BAR = 3.dp
 private val MODULE_NAMES = arrayOf("χ", "γ", "α", "Δ", "β")
 
 @Composable
-private fun OperatorCells(items: List<OperatorDisplayItem>, characters: Map<String, CharacterInfo?>) {
+internal fun OperatorCells(items: List<OperatorDisplayItem>, characters: Map<String, CharacterInfo?>) {
     items.forEach { item ->
         val info = characters[item.name]
         OperatorCell(item, operId = info?.id.orEmpty(), rarity = info?.rarity ?: 0)
@@ -1402,7 +1609,7 @@ private fun OperatorCells(items: List<OperatorDisplayItem>, characters: Map<Stri
 
 /** 放得下两格就排双列，同行取较高者对齐；不用 BoxWithConstraints 免子组合 */
 @Composable
-private fun OperatorGrid(
+internal fun OperatorGrid(
     modifier: Modifier = Modifier,
     content: @Composable () -> Unit,
 ) {
@@ -1459,7 +1666,6 @@ private fun OperatorCell(item: OperatorDisplayItem, operId: String, rarity: Int)
             ) {
                 OperAvatar(operId = operId, modifier = Modifier.fillMaxSize())
             }
-            // 不加 weight 时 Row 按不换行求固有高度，属性折行会被裁掉
             Column(
                 modifier = Modifier.weight(1f),
                 verticalArrangement = Arrangement.spacedBy(2.dp)
@@ -1478,75 +1684,68 @@ private fun OperatorCell(item: OperatorDisplayItem, operId: String, rarity: Int)
     }
 }
 
+/** 固定两行单行文本：网格按固有高度定格高，折行会被裁掉 */
 @Composable
 private fun OperatorAttributes(item: OperatorDisplayItem) {
     val muted = MaterialTheme.colorScheme.onSurfaceVariant
-    FlowRow(
-        horizontalArrangement = Arrangement.spacedBy(6.dp),
-        verticalArrangement = Arrangement.spacedBy(1.dp),
-        itemVerticalAlignment = Alignment.CenterVertically
-    ) {
-        item.promotion?.let { promotion ->
-            val elite = stringResource(
-                when (promotion.elite) {
-                    0 -> R.string.panel_autobattle_oper_elite_0
-                    1 -> R.string.panel_autobattle_oper_elite_1
-                    else -> R.string.panel_autobattle_oper_elite_2
-                }
-            )
-            // 校正器只补精英化不补等级，0 级不显示
-            OperAttrText(
-                text = if (promotion.level > 0) {
-                    stringResource(R.string.panel_autobattle_oper_promotion, elite, promotion.level)
-                } else {
-                    elite
-                },
-                color = muted
-            )
+    val promotionText = item.promotion?.let { promotion ->
+        val elite = stringResource(
+            when (promotion.elite) {
+                0 -> R.string.panel_autobattle_oper_elite_0
+                1 -> R.string.panel_autobattle_oper_elite_1
+                else -> R.string.panel_autobattle_oper_elite_2
+            }
+        )
+        // 校正器只补精英化不补等级，0 级不显示
+        if (promotion.level > 0) {
+            stringResource(R.string.panel_autobattle_oper_promotion, elite, promotion.level)
+        } else {
+            elite
         }
+    }
+    val moduleText = item.module?.let { module ->
+        if (module == 0) {
+            stringResource(R.string.panel_autobattle_oper_no_module)
+        } else {
+            stringResource(R.string.panel_autobattle_oper_module, MODULE_NAMES[module - 1])
+        }
+    }
+    if (promotionText != null || moduleText != null) {
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            promotionText?.let { OperAttrText(it, muted) }
+            moduleText?.let { OperAttrText(it, muted) }
+        }
+    }
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(3.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
         if (item.skill > 0) {
-            // 技能号与等级不拆行
-            Row(
-                modifier = Modifier.width(IntrinsicSize.Max),
-                horizontalArrangement = Arrangement.spacedBy(3.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                OperAttrText(
-                    text = stringResource(R.string.panel_autobattle_oper_skill, item.skill),
-                    color = MaterialTheme.colorScheme.primary,
-                    fontWeight = FontWeight.Bold
-                )
-                val skillLevel = item.skillLevel
-                if (skillLevel != null && skillLevel > 7) {
-                    val mastery = skillLevel - 7
-                    MasteryBadge(level = mastery, modifier = Modifier.size(10.dp))
-                    val res = when (mastery) {
-                        1 -> R.string.panel_autobattle_oper_mastery_1
-                        2 -> R.string.panel_autobattle_oper_mastery_2
-                        else -> R.string.panel_autobattle_oper_mastery_3
-                    }
-                    OperAttrText(stringResource(res), muted)
-                } else if (skillLevel != null) {
-                    OperAttrText(
-                        stringResource(R.string.panel_autobattle_oper_skill_level, skillLevel),
-                        muted
-                    )
+            OperAttrText(
+                text = stringResource(R.string.panel_autobattle_oper_skill, item.skill),
+                color = MaterialTheme.colorScheme.primary,
+                fontWeight = FontWeight.Bold
+            )
+            val skillLevel = item.skillLevel
+            if (skillLevel != null && skillLevel > 7) {
+                val mastery = skillLevel - 7
+                MasteryBadge(level = mastery, modifier = Modifier.size(10.dp))
+                val res = when (mastery) {
+                    1 -> R.string.panel_autobattle_oper_mastery_1
+                    2 -> R.string.panel_autobattle_oper_mastery_2
+                    else -> R.string.panel_autobattle_oper_mastery_3
                 }
+                OperAttrText(stringResource(res), muted)
+            } else if (skillLevel != null) {
+                OperAttrText(stringResource(R.string.panel_autobattle_oper_skill_level, skillLevel), muted)
             }
         } else {
             OperAttrText(
                 stringResource(R.string.panel_autobattle_oper_no_skill),
                 MaterialTheme.colorScheme.outline
-            )
-        }
-        item.module?.let { module ->
-            OperAttrText(
-                text = if (module == 0) {
-                    stringResource(R.string.panel_autobattle_oper_no_module)
-                } else {
-                    stringResource(R.string.panel_autobattle_oper_module, MODULE_NAMES[module - 1])
-                },
-                color = muted
             )
         }
     }
@@ -1558,14 +1757,13 @@ private fun OperAttrText(
     color: Color,
     fontWeight: FontWeight? = null,
 ) {
-    // FlowRow 按最小固有宽度估行数，中文只算一个字宽，不钉住会少算行高
     Text(
         text = text,
         style = MaterialTheme.typography.labelSmall,
         fontWeight = fontWeight,
         color = color,
         maxLines = 1,
-        modifier = Modifier.width(IntrinsicSize.Max)
+        overflow = TextOverflow.Ellipsis
     )
 }
 
